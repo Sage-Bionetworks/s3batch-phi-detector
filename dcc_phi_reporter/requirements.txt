@@ -1,0 +1,4 @@
+requests
+tifffile
+imagecodecs
+apeer-ometiff-library
