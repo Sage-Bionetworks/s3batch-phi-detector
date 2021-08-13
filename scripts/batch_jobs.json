@@ -1,0 +1,80 @@
+[
+    {
+        "AccountId": 888810830951,
+        "ConfirmationRequired": true,
+        "Description": "PHI Checking Batch Job",
+        "Priority": 123,
+        "Operation":{
+            "LambdaInvoke": {
+                "FunctionArn": "arn:aws:lambda:us-east-1:888810830951:function:dcc-phi-checker-DetectPHI-HgOcKvXPkc6e"
+            }
+        },
+        "Report":{
+            "Bucket": "arn:aws:s3:::s3batch-dev-unmanaged",
+            "Format": "Report_CSV_20180820",
+            "Enabled": true,
+            "Prefix": "final-reports",
+            "ReportScope": "AllTasks"
+        },
+        "Manifest":{
+            "Spec": {
+                "Format": "S3BatchOperations_CSV_20180820",
+                "Fields": ["Bucket", "Key"]
+            },
+            "Location": {
+                "ObjectArn": "arn:aws:s3:::s3batch-dev-unmanaged/manifest.csv",
+                "ETag": "8063540e7524e525f0213e8a35eb1e7b"
+            }
+        },
+        "RoleArn": "arn:aws:iam::888810830951:role/dcc-phi-checker-BatchRole-GPU8191TJ4LT",
+        "Tags":[
+            {
+                "Key": "origin",
+                "Value": "json"
+            },
+            {
+                "Key": "type",
+                "Value": "phi"
+            }
+        ]
+    },
+    {
+        "AccountId": 888810830951,
+        "ConfirmationRequired": true,
+        "Description": "PHI Checking Batch Job HTAN Example Data",
+        "Priority": 123,
+        "Operation":{
+            "LambdaInvoke": {
+                "FunctionArn": "arn:aws:lambda:us-east-1:888810830951:function:dcc-phi-checker-DetectPHI-HgOcKvXPkc6e"
+            }
+        },
+        "Report":{
+            "Bucket": "arn:aws:s3:::htan-imaging-example-datasets",
+            "Format": "Report_CSV_20180820",
+            "Enabled": true,
+            "Prefix": "final-reports",
+            "ReportScope": "AllTasks"
+        },
+        "Manifest":{
+            "Spec": {
+                "Format": "S3BatchOperations_CSV_20180820",
+                "Fields": ["Bucket", "Key"]
+            },
+            "Location": {
+                "ObjectArn": "arn:aws:s3:::htan-imaging-example-datasets/manifest.csv",
+                "ETag": "2dc2f0df4f7bfed2b253a2787996e5ee"
+            }
+        },
+        "RoleArn": "arn:aws:iam::888810830951:role/dcc-phi-checker-BatchRole-GPU8191TJ4LT",
+        "Tags":[
+            {
+                "Key": "origin",
+                "Value": "json"
+            },
+            {
+                "Key": "type",
+                "Value": "phi"
+            }
+        ]
+    }
+]
