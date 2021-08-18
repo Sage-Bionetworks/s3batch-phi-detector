@@ -1,8 +1,12 @@
 import json
 
 import pytest
+from moto import mock_s3
 
-from hello_world import app
+from dcc_phi_reporter import app
+
+MY_BUCKET = "my_bucket"
+MY_PREFIX = "mock_folder"
 
 
 @pytest.fixture()
@@ -62,12 +66,43 @@ def apigw_event():
     }
 
 
-def test_lambda_handler(apigw_event, mocker):
+@pytest.fixture()
+def s3Batch_event():
+    response = {
+      "invocationSchemaVersion": "1.0",
+      "invocationId": "YXNkbGZqYWRmaiBhc2RmdW9hZHNmZGpmaGFzbGtkaGZza2RmaAo",
+      "job": {
+        "id": "f3cc4f60-61f6-4a2b-8a21-d07600c373ce"
+      },
+      "tasks": [
+        {
+          "taskId": "dGFza2lkZ29lc2hlcmUK",
+          "s3Key": "example_texts_1/text1.txt",
+          "s3VersionId": "1",
+          "s3BucketArn": "arn:aws:s3:::s3batch-dev-unmanaged"
+        }
+      ]
+    }
+    return response
 
-    ret = app.lambda_handler(apigw_event, "")
-    data = json.loads(ret["body"])
 
-    assert ret["statusCode"] == 200
-    assert "message" in ret["body"]
-    assert data["message"] == "hello world"
-    # assert "location" in data.dict_keys()
+# def test_lambda_handler(apigw_event, mocker):
+def test_lambda_handler(s3Batch_event, mocker):
+    # ret = app.lambda_handler(apigw_event, "")
+    # data = json.loads(ret["body"])
+    # assert ret["statusCode"] == 200
+    # assert "message" in ret["body"]
+    # assert data["message"] == "hello world"
+
+    # Mock S3 resource
+    # Pull S3 get_object from mocked S3 directory
+
+
+    # Mock AWS comprehend API
+
+    # ret = app.lambda_handler(s3Batch_event, "")
+    pass
+
+    # print(ret)
+    # assert ret["invocationId"] == s3Batch_event["invocationId"]
+    # assert ret["invocationSchemaVersion"] == s3Batch_event["invocationSchemaVersion"]
