@@ -130,3 +130,7 @@ dmypy.json
 
 # jetbrains
 .idea/
+
+# AWS SAM
+.aws-sam/
+tests/testdata/
