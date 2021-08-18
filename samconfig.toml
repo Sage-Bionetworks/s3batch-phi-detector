@@ -1,0 +1,11 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "dcc-phi-checker"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-keq5kipcgtht"
+s3_prefix = "dcc-phi-checker"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+profile = "htan-dev-admin"
