@@ -17,26 +17,7 @@ DESCRIPTION:
         file-extensions
 """
 
-# Config(s3={'addressing_style': 'path'})
-# my_session = boto3.session.Session()
-session = boto3.Session(profile_name='sandbox')
-
-# sts = session.client('sts')
-# response = sts.assume_role(
-#         RoleArn="arn:aws:sts::563295687221:assumed-role/AWSReservedSSO_Developer_baa6fed639faf5e7/jason.hwee@sagebase.org",
-#     RoleSessionName='random-sts-session',
-#     DurationSeconds=900
-# )
-
-# s3 = boto3.resource('s3')
-
-# s3client = session.client(
-#     's3',
-#     aws_access_key_id=response['Credentials']['AccessKeyId'],
-#     aws_secret_access_key=response['Credentials']['SecretAccessKey'],
-#     aws_session_token=response['Credentials']['SessionToken'],
-# )
-# s3_paginator = boto3.client('s3').get_paginator('list_objects_v2')
+session = boto3.Session(profile_name='sandbox-developer')
 s3client = session.client('s3')
 s3_paginator = s3client.get_paginator('list_objects_v2')
 
