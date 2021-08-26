@@ -15,15 +15,30 @@ DESCRIPTION:
     User-specified:
         prefixes
         file-extensions
-
 """
 
 # Config(s3={'addressing_style': 'path'})
-# session = boto3.Session(profile_name='default')
+# my_session = boto3.session.Session()
+session = boto3.Session(profile_name='sandbox')
 
-s3 = boto3.resource('s3')
-s3client = boto3.client('s3')
-s3_paginator = boto3.client('s3').get_paginator('list_objects_v2')
+# sts = session.client('sts')
+# response = sts.assume_role(
+#         RoleArn="arn:aws:sts::563295687221:assumed-role/AWSReservedSSO_Developer_baa6fed639faf5e7/jason.hwee@sagebase.org",
+#     RoleSessionName='random-sts-session',
+#     DurationSeconds=900
+# )
+
+# s3 = boto3.resource('s3')
+
+# s3client = session.client(
+#     's3',
+#     aws_access_key_id=response['Credentials']['AccessKeyId'],
+#     aws_secret_access_key=response['Credentials']['SecretAccessKey'],
+#     aws_session_token=response['Credentials']['SessionToken'],
+# )
+# s3_paginator = boto3.client('s3').get_paginator('list_objects_v2')
+s3client = session.client('s3')
+s3_paginator = s3client.get_paginator('list_objects_v2')
 
 
 # Utils
@@ -65,9 +80,10 @@ if __name__ == '__main__':
     parser.add_argument('bucket_name', nargs=1, help='Bucket name')
     # parser.add_argument('-p', '--profile', default='default')
     parser.add_argument('-pr', '--prefix', default='/')
+    # parser.add_argument('-arn', '--role-arn')
+
     # parser.add_argument('-i', '--ignore', default='/')
     # parser.add_argument('-r', '--region')  # Required for s3 style
-
     args = parser.parse_args()
 
     # Organize Args
@@ -75,10 +91,10 @@ if __name__ == '__main__':
     prefix = args.prefix
 
     # Get available buckets
-    available_buckets = get_available_buckets()
-    if bucket_name is None or bucket_name not in available_buckets:
-        [print(bucket) for bucket in available_buckets]
-        sys.exit(f'No bucket found with that name: {bucket_name}')
+    # available_buckets = get_available_buckets()
+    # if bucket_name is None or bucket_name not in available_buckets:
+    #     [print(bucket) for bucket in available_buckets]
+    #     sys.exit(f'No bucket found with that name: {bucket_name}')
 
     # List objects using boto3.resource abstraction
     # bucket = s3.Bucket(bucket_name)
