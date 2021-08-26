@@ -17,7 +17,7 @@ DESCRIPTION:
         file-extensions
 """
 
-session = boto3.Session(profile_name='sandbox-developer')
+session = boto3.Session()  # Set AWS_PROFILE=<profile_name>
 s3client = session.client('s3')
 s3_paginator = s3client.get_paginator('list_objects_v2')
 
