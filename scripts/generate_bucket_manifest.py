@@ -15,15 +15,11 @@ DESCRIPTION:
     User-specified:
         prefixes
         file-extensions
-
 """
 
-# Config(s3={'addressing_style': 'path'})
-# session = boto3.Session(profile_name='default')
-
-s3 = boto3.resource('s3')
-s3client = boto3.client('s3')
-s3_paginator = boto3.client('s3').get_paginator('list_objects_v2')
+session = boto3.Session()  # Set AWS_PROFILE=<profile_name>
+s3client = session.client('s3')
+s3_paginator = s3client.get_paginator('list_objects_v2')
 
 
 # Utils
@@ -65,9 +61,10 @@ if __name__ == '__main__':
     parser.add_argument('bucket_name', nargs=1, help='Bucket name')
     # parser.add_argument('-p', '--profile', default='default')
     parser.add_argument('-pr', '--prefix', default='/')
+    # parser.add_argument('-arn', '--role-arn')
+
     # parser.add_argument('-i', '--ignore', default='/')
     # parser.add_argument('-r', '--region')  # Required for s3 style
-
     args = parser.parse_args()
 
     # Organize Args
@@ -75,10 +72,10 @@ if __name__ == '__main__':
     prefix = args.prefix
 
     # Get available buckets
-    available_buckets = get_available_buckets()
-    if bucket_name is None or bucket_name not in available_buckets:
-        [print(bucket) for bucket in available_buckets]
-        sys.exit(f'No bucket found with that name: {bucket_name}')
+    # available_buckets = get_available_buckets()
+    # if bucket_name is None or bucket_name not in available_buckets:
+    #     [print(bucket) for bucket in available_buckets]
+    #     sys.exit(f'No bucket found with that name: {bucket_name}')
 
     # List objects using boto3.resource abstraction
     # bucket = s3.Bucket(bucket_name)
