@@ -134,3 +134,4 @@ dmypy.json
 # AWS SAM
 .aws-sam/
 tests/testdata/
+outputs/
