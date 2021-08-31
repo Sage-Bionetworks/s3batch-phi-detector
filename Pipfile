@@ -12,6 +12,7 @@ boto3 = "~=1.17.102"
 [packages]
 crhelper = "~=2.0.10"
 boto3 = "*"
+tifffile = "*"
 
 [requires]
 python_version = "3.7"
