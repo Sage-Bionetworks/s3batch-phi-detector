@@ -3,7 +3,7 @@ import argparse
 import io
 import logging
 import json
-from typing import List
+from typing import List, Optional
 
 from tifffile import TiffFile
 import boto3
@@ -18,10 +18,18 @@ formatter = logging.Formatter(log_format)
 
 
 def configure_logger(log_level=logging.INFO):
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-    handler.setLevel(log_level)
-    logger.addHandler(handler)
+    # StreamHandler
+    sh = logging.StreamHandler()
+    sh.setFormatter(formatter)
+    sh.setLevel(log_level)
+    logger.addHandler(sh)
+
+    # FileHanlder
+    fh = logging.FileHandler('logs.log')
+    fh.setFormatter(formatter)
+    fh.setLevel(log_level)
+    logger.addHandler(fh)
+
 
 
 # Clients/Resources
@@ -155,7 +163,7 @@ class S3File(io.RawIOBase):
         return True
 
 
-def chunk_split(data: str, chunk_size=5000) -> List[str]:
+def chunk_split(data: str, chunk_size: int = 4096) -> List[str]:
     """
     This is good enough for now if everything is in English.
     Keep in mind, str position != byte_size of characters.
@@ -180,17 +188,17 @@ def chunk_split(data: str, chunk_size=5000) -> List[str]:
 
 
 def utf8len(s: str) -> int:
-    return len(s.encode('utf-8'))
+    try:
+        return len(s.encode('utf-8'))
+    except AttributeError as e:
+        logger.debug(s, e)
+        raise e
 
 
-def detect_pii(data):
+def detect_pii(data: str, chunk_size: int = 4096) -> List[str]:
     # AWS Comprehend 5000 byte limit
-    CHUNK_SIZE = 2500
-    CHUNK_SIZE = 5000
-    CHUNK_SIZE = 4096
+    CHUNK_SIZE = chunk_size
     split_data = chunk_split(data, chunk_size=CHUNK_SIZE)
-    logger.info('Data size:{} '.format(utf8len(data)))
-    logger.info('Chunks: {}'.format(len(split_data)))
 
     results = []
     for i, chunk in enumerate(split_data):
@@ -210,7 +218,13 @@ def detect_pii(data):
             # print(f'Chunk:{i}\t {entity}')
             results.append(tuple((i, entity)))
 
-    return results
+    stats = {
+        'data_len': utf8len(data),
+        'chunk_num': len(split_data),
+        'result_num': len(results)
+    }
+
+    return results, (utf8len(data), len(split_data), len(results))
 
 
 # Utils
@@ -222,12 +236,24 @@ def keys(bucket_name, prefix='/', delimiter='/', start_after=''):
             yield content['Key']
 
 
+def get_tags(s3_file, output_path):
+    with TiffFile(s3_file) as tif:
+        tif_tags = {}
+        for pages in tif.pages:
+            for tag in pages.tags.values():
+                name, value = tag.name, tag.value
+                tif_tags[name] = value
+
+    with open(output_path, 'w') as f:
+        json.dump(tif_tags, f)
+
 def process_args():
     parser = argparse.ArgumentParser(description='Generate a s3batch bucket manifest file')
     parser.add_argument('bucket_name', nargs=1, help='Bucket name')
     # parser.add_argument('-o', '--outfile')
     parser.add_argument('-pr', '--prefix', default='/')
     parser.add_argument('-i', '--ignore', default='/')
+    parser.add_argument('-r', '--regex', default='/')
     parser.add_argument('-l', '--log-level', default=logging.INFO)
     # parser.add_argument('-p', '--profile', default='default')
     # parser.add_argument('-arn', '--role-arn')
@@ -248,46 +274,58 @@ def main():
 
     # Iterate over S3 Objects
     for key in keys(bucket_name, prefix=prefix):
-        logger.info(f'{bucket_name},{key}')
+        logger.info(f'Working: {bucket_name},{key}')
         s3Key = key
         s3Bucket = bucket_name
 
-        try:
-            if s3Key.endswith('.txt'):
-                obj = s3.get_object(Bucket=s3Bucket, Key=s3Key)
-                logger.info(f"Got '{s3Key}' from bucket '{s3Bucket}'")
-                data = obj['Body'].read().decode('utf-8')
-            elif s3Key.endswith('.ome.tiff') or s3Key.endswith('.ome.tif'):
-                obj = s3_resource.Object(bucket_name=s3Bucket, key=s3Key)
-                logger.info(f"Got '{s3Key}' from bucket '{s3Bucket}'")
-                logger.debug(obj)
+        # Use A
+        plaintext_types = ['.txt', '.csv', '.tsv']
+        image_types_1 = ['.ome.tiff', '.ome.tif', '.tif']
+        image_types_2 = ['.png', '.jpg']
+        other_types = ['.svs', '.story.json']  # SVS WashU H&E staining
 
+        # Use Content-Types
+
+        # Currently placing assumption on S3key names
+        try:
+            if s3Key.endswith('.txt') or s3Key.endswith('.csv'):
+                obj = s3.get_object(Bucket=s3Bucket, Key=s3Key)
+                logger.info(f"Retrieved: {s3Bucket},{s3Key}")
+                data = obj['Body'].read().decode('utf-8')
+
+                # Call detect
+                logger.info(f'Inspecting: {s3Key}')
+                pii_entities, stats = detect_pii(data)
+
+                # Write out each line
+                for entity in pii_entities:
+                    result = json.dumps(entity[1])
+                    print(f'{s3Bucket}\t {s3Key}\t {result}')
+
+            elif s3Key.endswith('.ome.tiff') or s3Key.endswith('.ome.tif') or s3Key.endswith('.tif'):
+                obj = s3_resource.Object(bucket_name=s3Bucket, key=s3Key)
+                logger.info(f"Retrieved: {s3Bucket},{s3Key}")
+                logger.debug(obj)
+                logger.info(f'Inspecting: {s3Key}')
                 with TiffFile(S3File(obj)) as tif:
                     tags = tif.pages[0].tags
-                    desc_tag = tags.get('ImageDescription', '')
+                    # Call detect per image tag
+                    for tag in tags.values():
+                        pii_entities, stats = detect_pii(str(tag.value))
+                        logger.info("Size/Chunks/Entities:{}".format(stats))
+                        # Write out each line
+                        for entity in pii_entities:
+                            result = json.dumps(entity[1])
+                            print(f'{s3Bucket}\t {s3Key}\t {tag.name}\t {result}')
 
-                data = desc_tag.value
             else:
-                logger.info("Skipping: {s3Key} for now")
+                logger.info(f"Skipping: {s3Key}")
                 continue
-            # Handle .json/.story.json case
-            # Handle jpg, png case
-            # if data
-
-            # sys.exit('BREAKPOINT')
         except ClientError:
-            logger.exception(f"Couldn't get '{s3Key}' from '{s3Bucket}'")
+            logger.exception(f"Unable to retrieve {s3Bucket},{s3Key}")
             raise
-
-        # Action
-        logger.debug(f'Data: {data}')
-        logger.info(f'Detecting PII: {s3Key}')
-        pii_entities = detect_pii(data)
-        logger.info('Entities: {}'.format(len(pii_entities)))
-
-        for entity in pii_entities:
-            result = json.dumps(entity[1])
-            print(f'{s3Bucket}\t {s3Key}\t {result}')
+        except NotImplementedError as e:
+            logger.info(f'Skipping: {s3Key} due to tif NotImplementedError')
 
 
 if __name__ == '__main__':
