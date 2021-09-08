@@ -300,7 +300,7 @@ def main():
                 # Write out each line
                 for entity in pii_entities:
                     result = json.dumps(entity[1])
-                    print(f'{s3Bucket}\t {s3Key}\t {result}')
+                    print(f'{s3Bucket}\t {s3Key}\t NoTag\t {result}')
 
             elif s3Key.endswith('.ome.tiff') or s3Key.endswith('.ome.tif') or s3Key.endswith('.tif'):
                 obj = s3_resource.Object(bucket_name=s3Bucket, key=s3Key)
