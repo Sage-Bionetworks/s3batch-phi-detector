@@ -13,6 +13,7 @@ boto3 = "~=1.17.102"
 crhelper = "~=2.0.10"
 boto3 = "*"
 tifffile = "*"
+google-cloud-storage = "*"
 
 [requires]
 python_version = "3.7"
