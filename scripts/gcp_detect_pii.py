@@ -7,7 +7,7 @@ import boto3
 from tifffile import TiffFile
 from google.cloud import storage
 
-s3 = boto3.resource('s3')
+# s3 = boto3.resource('s3')
 
 storage_client = storage.Client()
 
@@ -86,20 +86,24 @@ def process_args():
     parser = argparse.ArgumentParser(description='Generate a s3batch bucket manifest file')
     parser.add_argument('bucket_name', nargs=1, help='Bucket name')
     # parser.add_argument('-o', '--outfile')
-    parser.add_argument('-pr', '--prefix', default='/')
+    parser.add_argument('-pr', '--prefix', type=str)
     parser.add_argument('-i', '--ignore', default='/')
     parser.add_argument('-l', '--log-level', default=logging.INFO)
-    # parser.add_argument('-p', '--profile', default='default')
-    # parser.add_argument('-arn', '--role-arn')
+
+    parser.add_argument('--s3_bucket_type',
+                    type=str,
+                    dest='s3_bucket_type',
+                    default="aws",
+                    help='S3 bucket type, [aws, gcs]')
+    parser.add_argument('-p', '--profile',
+                        type=str,
+                        dest='profile',
+                        help='aws profile to use')
     # parser.add_argument('-r', '--region')  # Required for s3 style
 
     return parser.parse_args()
 
 
-# import io
-# google_access_key_id="GOOG1EIxxMYKEYxxMQ"
-# google_access_key_secret="QifDxxMYSECRETKEYxxVU1oad1b"
-# gc_bucket_name="my_gc_bucket"
 def list_gcs_buckets(google_access_key_id, google_access_key_secret):
     """Lists all GCS buckets using boto3 SDK"""
     # Create a new client and do the following:
@@ -144,8 +148,6 @@ def get_gcs_objects(google_access_key_id, google_access_key_secret,
     # client.download_fileobj(gc_bucket_name, "sample-data.csv", f)
     # object.put(Body=f.getvalue())
 
-# def lambda_handler(event, context):
-#     get_gcs_objects(google_access_key_id,google_access_key_secret,gc_bucket_name)
 
 def list_blobs_with_prefix(bucket_name, prefix, delimiter=None):
 
@@ -154,8 +156,6 @@ def list_blobs_with_prefix(bucket_name, prefix, delimiter=None):
     for blob in blobs:
         print(blob.name)
         print(blob)
-        # with TiffFile(S3File(blob)) as tif:
-        #     print(tif)
 
     if delimiter:
         print("Prefixes:")
@@ -167,27 +167,36 @@ def main():
     bucket_name = args.bucket_name[0]
     prefix = args.prefix
 
-    # google_access_key_id
-    # google_access_key_secret
-    # gc_bucket_name
-    # get_gcs_objects(google_access_key_id, google_access_key_secret)
+    if args.s3_bucket_type == "aws":
+        session = boto3.session.Session(profile_name=args.profile)
+        client = session.client('s3')
 
-    # List buckets
-    buckets = storage_client.list_buckets()
+    if args.s3_bucket_type == "gcs":
+        print("Accessing GCS resource")
+        session = boto3.session.Session(profile_name=args.profile)
+        client = session.client('s3', endpoint_url="https://storage.googleapis.com")
+        s3_resource = session.resource('s3', endpoint_url="https://storage.googleapis.com")
 
-    # for bucket in buckets:
-    #     print(bucket.name)
+    response = client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+    print("Objects:")
+    for blob in response["Contents"]:
+        try:
+            key = blob['Key']
+            s3_obj = s3_resource.Object(bucket_name=bucket_name, key=key)
+            s3_file = S3File(s3_obj)
+            with TiffFile(s3_file, is_ome=False) as tif:
+                tags = tif.pages[0].tags
+                # for tag in tags:
+                #     print(f'{tag.name} {tag.value}')
+                desc = tags.get('ImageDescription')
+                print(desc.value)
 
-    # List Blobs
-    if prefix != '/':
-        list_blobs_with_prefix(bucket_name, prefix)
-    else:
-        blobs = storage_client.list_blobs(bucket_name)
-        for blob in blobs:
-            print(blob.name)
-            # with TiffFile(S3File(blob)) as tif:
-            #     print(tif)
+                # print(tags)
+        except Exception as e:
+            print(e)
 
+
+        # sys.exit("Exit after one")
 
 
 if __name__ == '__main__':
