@@ -9,6 +9,23 @@ from tifffile import TiffFile
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
+"""
+A Note on the boto3 lib:
+    If your bucket is an S3 bucket, we can use the s3 client interface and
+    paginate through list_objects_v2.
+    If your bucket is NOT an S3 bucket (GCS bucket), the boto client will
+    work expectedly with the s3 resource interface and NOT support
+    pagination or list_objects_v2.
+"""
+# TLDR:
+# Iterate through bucket items, CAN use paginate with list_objects_v2
+# If google bucket, CANNOT use boto s3 paginate with list_objects_v2
+
+# TODO: Use Content-Types
+# plaintext_types = ['.txt', '.csv', '.tsv']
+# image_types_1 = ['.ome.tiff', '.ome.tif', '.tif']
+# image_types_2 = ['.png', '.jpg']
+# other_types = ['.svs', '.story.json']  # SVS WashU H&E staining
 
 # Default logger
 logger = logging.getLogger(__name__)
@@ -29,14 +46,6 @@ def configure_logger(log_level=logging.INFO):
     fh.setFormatter(formatter)
     fh.setLevel(log_level)
     logger.addHandler(fh)
-
-
-# Clients/Resources
-session = boto3.Session()  # Set AWS_PROFILE=<profile_name>
-s3 = session.client('s3')
-s3_paginator = s3.get_paginator('list_objects_v2')
-s3_resource = boto3.resource('s3')
-comprehend = boto3.client('comprehend')
 
 # AWS ALL ENTITY TYPES
 entity_types = [
@@ -194,7 +203,8 @@ def utf8len(s: str) -> int:
         raise e
 
 
-def detect_pii(data: str, chunk_size: int = 4096) -> List[str]:
+def detect_pii(session, data: str, chunk_size: int = 4096) -> List[str]:
+    comprehend = session.client('comprehend')
     # AWS Comprehend 5000 byte limit
     CHUNK_SIZE = chunk_size
     split_data = chunk_split(data, chunk_size=CHUNK_SIZE)
@@ -221,12 +231,24 @@ def detect_pii(data: str, chunk_size: int = 4096) -> List[str]:
 
 
 # Utils
-def keys(bucket_name, prefix='/', delimiter='/', start_after=''):
-    prefix = prefix[1:] if prefix.startswith(delimiter) else prefix
-    start_after = (start_after or prefix) if prefix.endswith(delimiter) else start_after
-    for page in s3_paginator.paginate(Bucket=bucket_name, Prefix=prefix, StartAfter=start_after):
-        for content in page.get('Contents', ()):
-            yield content['Key']
+def keys(session, bucket_name, bucket_type, prefix='/', delimiter='/', start_after=''):
+
+    if bucket_type == 'aws':  # Pagination available for S3 Buckets
+        s3 = session.client('s3')
+        s3_paginator = s3.get_paginator('list_objects_v2')
+
+        prefix = prefix[1:] if prefix.startswith(delimiter) else prefix
+        start_after = (start_after or prefix) if prefix.endswith(delimiter) else start_after
+
+        for page in s3_paginator.paginate(Bucket=bucket_name, Prefix=prefix, StartAfter=start_after):
+            for content in page.get('Contents', ()):
+                yield content['Key']
+
+    else:  # Pagination NOT available for GCS buckets
+        s3_resource = session.resource('s3', endpoint_url='https://storage.googleapis.com')
+        bucket = s3_resource.Bucket(bucket_name)
+        for f in bucket.objects.all():
+            yield f.key
 
 
 def get_tags(s3_file, output_path):
@@ -240,45 +262,64 @@ def get_tags(s3_file, output_path):
     with open(output_path, 'w') as f:
         json.dump(tif_tags, f)
 
+def process_args():
+    parser = argparse.ArgumentParser(
+        description='Generate a s3batch bucket manifest file')
+    parser.add_argument('-b', '--bucket-name', required=True, help='Bucket name')
+    parser.add_argument('-t', '--bucket-type', default='aws', const='aws', nargs='?', choices=['aws', 'gcs'], type=str, help='Bucket name')
+
+    parser.add_argument('-p', '--profile', default='default', type=str, help='AWS profile to use')
+    parser.add_argument('-cp', '--comprehend_profile', default='default', type=str, help='AWS profile to use for Comprehend API')
+    parser.add_argument('-pr', '--prefix', default='/', help='If you do not supply a prefix, we will iterate through all bucket contents')
+    parser.add_argument('-i', '--ignore-prefix', help='We will ignore keys that start with this prefix')
+    parser.add_argument('-l', '--log-level', default=logging.INFO)
+    return parser.parse_args()
+
 def main():
     # Process CLI args
     args = process_args()
-    bucket_name = args.bucket_name[0]
+    bucket_name = args.bucket_name
+    bucket_type = args.bucket_type
+    profile = args.profile
+    comprehend_profile = args.comprehend_profile
     prefix = args.prefix
     ignore_prefix = args.ignore_prefix
-    # outfile = args.outfile
 
     # Init logger
     configure_logger(args.log_level)
 
+    # Configure main boto3 session and a comprehend_session
+    session = boto3.session.Session(profile_name=profile)
+    comprehend_session = boto3.session.Session(profile_name=comprehend_profile)
+
+    if bucket_type == 'aws':
+        s3 = session.resource('s3')
+    elif bucket_type == 'gcs':
+        # This endpoint is urlencoding spaces into '+' signs prematurely
+        s3 = session.resource('s3', endpoint_url='https://storage.googleapis.com')
+
+
     # Iterate over S3 Objects
-    for key in keys(bucket_name, prefix=prefix):
+    for key in keys(session, bucket_name, bucket_type, prefix=prefix):
         logger.info(f'Working: {bucket_name},{key}')
         s3Key = key
         s3Bucket = bucket_name
+
 
         if ignore_prefix and key.startswith(ignore_prefix):
             logger.info(f"Skipping: {s3Key}")
             continue
 
-        # Use A
-        plaintext_types = ['.txt', '.csv', '.tsv']
-        image_types_1 = ['.ome.tiff', '.ome.tif', '.tif']
-        image_types_2 = ['.png', '.jpg']
-        other_types = ['.svs', '.story.json']  # SVS WashU H&E staining
 
-        # Use Content-Types
-
-        # Currently placing assumption on S3key names
         try:
             if s3Key.endswith('.txt') or s3Key.endswith('.csv'):
-                obj = s3.get_object(Bucket=s3Bucket, Key=s3Key)
                 logger.info(f"Retrieved: {s3Bucket},{s3Key}")
-                data = obj['Body'].read().decode('utf-8')
+                obj = s3.Object(bucket_name=s3Bucket, key=s3Key)
+                data = obj.get()['Body'].read().decode('utf-8')
 
                 # Call detect
                 logger.info(f'Inspecting: {s3Key}')
-                pii_entities, stats = detect_pii(data)
+                pii_entities, stats = detect_pii(comprehend_session, data)
 
                 # Write out each line
                 for entity in pii_entities:
@@ -286,7 +327,7 @@ def main():
                     print(f'{s3Bucket}\t {s3Key}\t NoTag\t {result}')
 
             elif s3Key.endswith('.ome.tiff') or s3Key.endswith('.ome.tif') or s3Key.endswith('.tif'):
-                obj = s3_resource.Object(bucket_name=s3Bucket, key=s3Key)
+                obj = s3.Object(bucket_name=s3Bucket, key=s3Key)
                 logger.info(f"Retrieved: {s3Bucket},{s3Key}")
                 logger.debug(obj)
                 logger.info(f'Inspecting: {s3Key}')
@@ -294,7 +335,7 @@ def main():
                     tags = tif.pages[0].tags
                     # Call detect per image tag
                     for tag in tags.values():
-                        pii_entities, stats = detect_pii(str(tag.value))
+                        pii_entities, stats = detect_pii(comprehend_session, str(tag.value))
                         logger.info("Size/Chunks/Entities:{}".format(stats))
                         # Write out each line
                         for entity in pii_entities:
@@ -310,19 +351,6 @@ def main():
         except NotImplementedError as e:
             logger.info(f'Skipping: {s3Key} due to tif NotImplementedError')
 
-def process_args():
-    parser = argparse.ArgumentParser(description='Generate a s3batch bucket manifest file')
-    parser.add_argument('bucket_name', nargs=1, help='Bucket name')
-    # parser.add_argument('-o', '--outfile')
-    parser.add_argument('-pr', '--prefix', default='/')
-    parser.add_argument('-i', '--ignore-prefix')
-    parser.add_argument('-r', '--regex', default='/')
-    parser.add_argument('-l', '--log-level', default=logging.INFO)
-    # parser.add_argument('-p', '--profile', default='default')
-    # parser.add_argument('-arn', '--role-arn')
-    # parser.add_argument('-r', '--region')  # Required for s3 style
-
-    return parser.parse_args()
 
 if __name__ == '__main__':
     main()
