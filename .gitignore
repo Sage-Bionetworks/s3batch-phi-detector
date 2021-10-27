@@ -135,3 +135,6 @@ dmypy.json
 .aws-sam/
 tests/testdata/
 outputs/
+
+# Output files
+*.tsv
