@@ -1,3 +1,40 @@
+# Instructions
+Basic deid usage is also in the Makefile
+```bash
+# Will run deid starting from the bucket root
+make deid_ohsu
+make deid_washu
+```
+```bash
+# Example "make deid_ohsu"
+python scripts/aws_detect_pii.py \
+    -b htan-dcc-ohsu \
+    --bucket-type aws \
+    --profile sandbox-developer \
+    --comprehend_profile htan-dev-admin \
+    > outputs/test_ohsu_output.tsv
+
+python scripts/aws_detect_pii.py \
+    -b htan-dcc-washu \
+    --bucket-type gcs \
+    --profile htan-gcs \
+    --comprehend_profile htan-dev-admin \
+    > outputs/test_washu_output.tsv
+```
+### Notes
+Deid starting at the bucket root takes a long time.
+Suggest you supply the optional `--prefix` tag to the `aws_detect_pii.py` script.
+```bash
+python scripts/aws_detect_pii.py \
+    -b htan-dcc-ohsu \
+    --prefix imaging_level_2 \
+    --bucket-type aws \
+    --profile sandbox-developer \
+    --comprehend_profile htan-dev-admin \
+    > outputs/test_ohsu_output.tsv
+```
+
+
 # lambda-template
 A GitHub template for quickly starting a new AWS lambda project.
 
