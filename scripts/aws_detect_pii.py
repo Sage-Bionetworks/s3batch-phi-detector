@@ -4,11 +4,13 @@ import io
 import logging
 import json
 from typing import List, Optional
-
+import tifffile
 from tifffile import TiffFile
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
+from flatten_json import flatten
+
 """
 A Note on the boto3 lib:
     If your bucket is an S3 bucket, we can use the s3 client interface and
@@ -272,7 +274,7 @@ def process_args():
     parser.add_argument('-cp', '--comprehend_profile', default='default', type=str, help='AWS profile to use for Comprehend API')
     parser.add_argument('-pr', '--prefix', default='/', help='If you do not supply a prefix, we will iterate through all bucket contents')
     parser.add_argument('-i', '--ignore-prefix', help='We will ignore keys that start with this prefix')
-    parser.add_argument('-l', '--log-level', default=logging.INFO)
+    parser.add_argument('-l', '--log-level', default=logging.WARNING)
     return parser.parse_args()
 
 def main():
@@ -284,6 +286,18 @@ def main():
     comprehend_profile = args.comprehend_profile
     prefix = args.prefix
     ignore_prefix = args.ignore_prefix
+
+    ignored_tags = (
+        "JPEGTables",
+        "InterColorProfile",
+        "StripOffsets",
+        "StripByteCounts",
+        "TileOffsets",
+        "TileByteCounts",
+        "ImageDescription",
+        "ImageWidth",
+        "ImageHeight"
+    )
 
     # Init logger
     configure_logger(args.log_level)
@@ -326,7 +340,7 @@ def main():
                     result = json.dumps(entity[1])
                     print(f'{s3Bucket}\t {s3Key}\t NoTag\t {result}')
 
-            elif s3Key.endswith('.ome.tiff') or s3Key.endswith('.ome.tif') or s3Key.endswith('.tif'):
+            elif s3Key.endswith('.ome.tiff') or s3Key.endswith('.ome.tif') or s3Key.endswith('.tif') or s3Key.endswith('.svs'):
                 obj = s3.Object(bucket_name=s3Bucket, key=s3Key)
                 logger.info(f"Retrieved: {s3Bucket},{s3Key}")
                 logger.debug(obj)
@@ -335,13 +349,44 @@ def main():
                     tags = tif.pages[0].tags
                     # Call detect per image tag
                     for tag in tags.values():
-                        pii_entities, stats = detect_pii(comprehend_session, str(tag.value))
-                        logger.info("Size/Chunks/Entities:{}".format(stats))
-                        # Write out each line
-                        for entity in pii_entities:
-                            result = json.dumps(entity[1])
-                            print(f'{s3Bucket}\t {s3Key}\t {tag.name}\t {result}')
 
+                        if any(s in tag.name for s in ignored_tags):
+                            None
+
+                        else: 
+                            pii_entities, stats = detect_pii(comprehend_session, str(tag.value))
+                            logger.info("Size/Chunks/Entities:{}".format(stats))
+                        # Write out each line
+                            for entity in pii_entities:
+                                result = json.dumps(entity[1])
+                                print(f'{s3Bucket}\t {s3Key}\t {tag.name}\t {tag.value}\t {result}')
+                    # Call detect per image description tag
+                    description = tif.pages[0].description
+                    if description[:7] == 'Aperio ':
+                        #print("Parsing SVS image description to dict")
+                        description = tifffile.tifffile.svs_description_metadata(description)
+                    elif description[-4:] == 'OME>':
+                        #print("Parsing OME-XML image description to dict")
+                        description = tifffile.xml2dict(description)
+                    elif description[1:] == '<' and description[-1:] == '>':
+                        #print("Parsing XML image description to dict")
+                        description = tifffile.xml2dict(description)
+                    elif description[:7] == 'ImageJ=':
+                        #print("Parsing ImageJ image description to dict")
+                        description = tifffile.imagej_description_metadata(description)
+                    else:
+                        try:
+                            description = tifffile.tifffile.json_description_metadata(description)
+                        except:
+                            description = description
+                    description = flatten(description)
+                    for d_tag, d_value in description.items():
+                        #print("inspecting tag: " + str(d_tag) + " : " + str(d_value))
+                        d_pii_entities, d_stats = detect_pii(comprehend_session, str(d_value))
+                        logger.info("Size/Chunks/Entities:{}".format(d_stats))
+                        for d_entity in d_pii_entities:
+                            result = json.dumps(d_entity[1])
+                            print(f'{s3Bucket}\t {s3Key}\t ImageDescription_{d_tag}\t {d_value}\t {result}')
             else:
                 logger.info(f"Skipping: {s3Key}")
                 continue
